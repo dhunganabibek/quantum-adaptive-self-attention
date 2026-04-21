@@ -1,0 +1,33 @@
+# latex related files
+*.aux
+*.log
+*.nav
+*.toc
+*.snm
+*.gz
+*.out
+*.pyc
+
+# Environment — never commit real credentials
+.env
+
+# Python
+__pycache__/
+.python-version
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# macOS
+.DS_Store
+
+# uv
+.uv/
+
+
+# project related stuff
+notes
+outputs
+assets/related-papers
