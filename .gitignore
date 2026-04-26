@@ -26,6 +26,9 @@ venv/
 # uv
 .uv/
 
+.vscode
+.ruff_cache
+.mypy_cache
 
 # project related stuff
 notes

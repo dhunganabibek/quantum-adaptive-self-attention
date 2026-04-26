@@ -3,10 +3,6 @@ Generate plots from QASA training outputs.
 
 Reads from outputs/local/ and outputs/ibm/ and overlays both
 on the same figures so you can directly compare the two backends.
-
-Usage:
-    uv run python src/plot_results.py
-    uv run python src/plot_results.py --base-dir outputs --out-dir outputs/plots
 """
 
 from __future__ import annotations
@@ -21,8 +17,9 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.patches import Circle
 
-# olour palette 
+# olour palette
 NAVY   = "#1B2A4A"
 BLUE   = "#2D7DD2"   # local / primary
 ORANGE = "#E76F51"   # IBM / secondary
@@ -32,9 +29,9 @@ BG     = "#F7FAFD"
 
 # Per-backend style so every plot is consistent
 BACKEND_STYLE = {
-    "local": dict(color=BLUE,   label="Local (default.qubit)", marker="o", ls="-"),
-    "ibm":   dict(color=ORANGE, label="IBM Quantum",           marker="s", ls="--"),
-    "demo":  dict(color=GRAY,   label="Demo (5 epochs)",       marker="^", ls=":"),
+    "local": dict(color=BLUE,   label="Local (default.qubit)", marker="o", linestyle="-"),
+    "ibm":   dict(color=ORANGE, label="IBM Quantum",           marker="s", linestyle="--"),
+    "demo":  dict(color=GRAY,   label="Demo (5 epochs)",       marker="^", linestyle=":"),
 }
 
 plt.rcParams.update({
@@ -88,17 +85,17 @@ def plot_training_curves(runs: dict[str, list[dict]], out: Path) -> None:
         val_r2     = [r["val_r2"]     for r in history]
 
         ax1.plot(epochs, train_loss, alpha=0.5, lw=1.5, color=st["color"],
-                 ls=":", marker=None)
+                 linestyle=":", marker=None)
         ax1.plot(epochs, val_loss, lw=2, color=st["color"],
-                 marker=st["marker"], ms=4, ls=st["ls"], label=st["label"])
+                 marker=st["marker"], ms=4, linestyle=st["linestyle"], label=st["label"])
         ax2.plot(epochs, val_r2, lw=2, color=st["color"],
-                 marker=st["marker"], ms=4, ls=st["ls"], label=st["label"])
+                 marker=st["marker"], ms=4, linestyle=st["linestyle"], label=st["label"])
 
     ax1.set_xlabel("Epoch"); ax1.set_ylabel("MSE Loss")
     ax1.set_title("Validation Loss\n(dashed = train loss)")
     ax1.legend(fontsize=9); ax1.grid(True)
 
-    ax2.axhline(0, color=GRAY, lw=1, ls=":")
+    ax2.axhline(0, color=GRAY, lw=1, linestyle=":")
     ax2.set_xlabel("Epoch"); ax2.set_ylabel("R²")
     ax2.set_title("Validation R²")
     ax2.legend(fontsize=9); ax2.grid(True)
@@ -109,7 +106,7 @@ def plot_training_curves(runs: dict[str, list[dict]], out: Path) -> None:
     _save(fig, out)
 
 
-# Final metrics bar chart — side-by-side per backend 
+# Final metrics bar chart — side-by-side per backend
 
 def plot_metrics_comparison(metrics: dict[str, dict], out: Path) -> None:
     """
@@ -193,13 +190,30 @@ def plot_size_vs_accuracy(out: Path) -> None:
                  fontsize=13, fontweight="bold")
 
     ax2 = ax1.twinx()
-    ax1.plot(n_qubits, r2_local, **{k: v for k, v in BACKEND_STYLE["local"].items()
-                                     if k in ("color", "marker", "ls")},
-             lw=2.5, ms=6, label="R² — Local")
-    ax1.plot(n_qubits, r2_ibm,   **{k: v for k, v in BACKEND_STYLE["ibm"].items()
-                                     if k in ("color", "marker", "ls")},
-             lw=2.5, ms=6, label="R² — IBM Quantum (est.)")
-    ax2.plot(n_qubits, time_secs, color=GREEN, lw=2, ls=":", marker="D", ms=5,
+    local_style = BACKEND_STYLE["local"]
+    ibm_style = BACKEND_STYLE["ibm"]
+
+    ax1.plot(
+        n_qubits,
+        r2_local,
+        color=local_style["color"],
+        marker=local_style["marker"],
+        linestyle=local_style["linestyle"],
+        lw=2.5,
+        ms=6,
+        label="R² — Local",
+    )
+    ax1.plot(
+        n_qubits,
+        r2_ibm,
+        color=ibm_style["color"],
+        marker=ibm_style["marker"],
+        linestyle=ibm_style["linestyle"],
+        lw=2.5,
+        ms=6,
+        label="R² — IBM Quantum (est.)",
+    )
+    ax2.plot(n_qubits, time_secs, color=GREEN, lw=2, linestyle=":", marker="D", ms=5,
              label="Time/epoch (s)")
 
     ax1.set_xlabel("Number of Qubits")
@@ -208,7 +222,7 @@ def plot_size_vs_accuracy(out: Path) -> None:
     ax2.tick_params(axis="y", colors=GREEN)
     ax1.set_xticks(n_qubits)
     ax1.set_ylim(0.70, 0.97)
-    ax1.axvline(4, color=GRAY, lw=1.2, ls=":", alpha=0.8)
+    ax1.axvline(4, color=GRAY, lw=1.2, linestyle=":", alpha=0.8)
     ax1.text(4.1, 0.72, "sweet spot\n(4 qubits)", color=GRAY, fontsize=9)
     ax1.grid(True, axis="x")
 
@@ -231,7 +245,7 @@ def plot_gate_intuition(out: Path) -> None:
                  fontsize=13, fontweight="bold")
 
     # Left: Bloch circle
-    circle = plt.Circle((0, 0), 1, color=GRAY, fill=False, lw=1, ls="--")
+    circle = Circle((0, 0), 1, color=GRAY, fill=False, lw=1, linestyle="--")
     ax1.add_patch(circle)
     ax1.plot(np.cos(theta_vals / 2), np.sin(theta_vals / 2),
              color=BLUE, lw=1.5, alpha=0.25)
@@ -253,7 +267,7 @@ def plot_gate_intuition(out: Path) -> None:
 
     # Right: classical W·x rotation
     angles_nn = np.linspace(0, 2*math.pi, 300)
-    ax2.plot(np.cos(angles_nn), np.sin(angles_nn), color=GRAY, lw=1, ls="--", alpha=0.35)
+    ax2.plot(np.cos(angles_nn), np.sin(angles_nn), color=GRAY, lw=1, linestyle="--", alpha=0.35)
     for w_angle, color, label in [
         (0,           NAVY,   "input x"),
         (math.pi/4,   BLUE,   "W·x  (θ=π/4)"),
