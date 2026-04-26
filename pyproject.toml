@@ -1,0 +1,50 @@
+[project]
+name = "quantum-adaptive-self-attention"
+version = "0.1.0"
+description = "Hybrid quantum-classical time-series forecasting with QASA"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "torch",
+    "numpy",
+    "pennylane",
+    "pennylane-lightning",
+    "matplotlib>=3.10.8",
+    "python-dotenv>=1.2.2",
+]
+
+[project.optional-dependencies]
+ibm = [
+    "pennylane-qiskit",
+    "qiskit-ibm-runtime",
+]
+dev = [
+    "ruff",
+    "pyright",
+]
+
+[tool.uv]
+package = true
+
+[project.scripts]
+qasa-train = "src.main:main"
+qasa-plot  = "src.plot_results:main"
+
+[tool.ruff]
+src = ["src"]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+ignore  = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["src"]
+
+[tool.pyright]
+include            = ["src"]
+pythonVersion      = "3.12"
+typeCheckingMode   = "basic"
+reportMissingImports       = true
+reportMissingModuleSource  = false
