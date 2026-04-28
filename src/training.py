@@ -1,7 +1,6 @@
 """Training utilities and metrics."""
 
 import math
-from typing import Optional
 
 import numpy as np
 import torch
@@ -21,7 +20,7 @@ def compute_metrics(pred: torch.Tensor, target: torch.Tensor) -> dict[str, float
 
 class EarlyStopping:
     """Early stopping to prevent overfitting."""
-    
+
     def __init__(self, patience: int):
         self.patience = patience
         self.best = float("inf")
@@ -42,37 +41,38 @@ class EarlyStopping:
 def run_epoch(
     model: nn.Module,
     loader: DataLoader,
-    optimizer: Optional[torch.optim.Optimizer],
+    optimizer: torch.optim.Optimizer | None,
     device: torch.device,
-    grad_clip: Optional[float] = None,
-    log_every: Optional[int] = None,
+    grad_clip: float | None = None,
+    log_every: int | None = None,
 ) -> tuple[float, dict[str, float]]:
     """Run one epoch of training or evaluation."""
     is_train = optimizer is not None
     model.train(is_train)
-    
+
     losses, preds, targets = [], [], []
 
     for step, (x, y) in enumerate(loader, 1):
         x, y = x.to(device), y.to(device)
-        
+
         with torch.set_grad_enabled(is_train):
             pred = model(x)
             loss = F.mse_loss(pred, y)
-            
+
             if is_train:
                 optimizer.zero_grad(set_to_none=True)
                 loss.backward()
                 if grad_clip:
                     nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
                 optimizer.step()
-        
+
         losses.append(loss.item())
         preds.append(pred.detach().cpu())
         targets.append(y.detach().cpu())
-        
+
         if is_train and log_every and step % log_every == 0:
             import logging
+
             logging.info(f"  step={step}  loss={float(np.mean(losses)):.4f}")
 
     return float(np.mean(losses)), compute_metrics(torch.cat(preds), torch.cat(targets))

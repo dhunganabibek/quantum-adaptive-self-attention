@@ -1,4 +1,4 @@
-"""All model implementations for QASA."""
+"""Model implementations: MLP, Classical Transformer, and QASA."""
 
 import logging
 import math
@@ -13,8 +13,6 @@ from utils import make_device
 
 
 class PositionalEncoding(nn.Module):
-    """Sinusoidal positional encoding."""
-    
     def __init__(self, d_model: int, max_len: int = 4096):
         super().__init__()
         pe = torch.zeros(max_len, d_model)
@@ -29,8 +27,6 @@ class PositionalEncoding(nn.Module):
 
 
 class FeedForward(nn.Module):
-    """Position-wise feed-forward network."""
-    
     def __init__(self, d_model: int, ff_mult: int, dropout: float):
         super().__init__()
         self.net = nn.Sequential(
@@ -46,8 +42,6 @@ class FeedForward(nn.Module):
 
 
 class EncoderBlock(nn.Module):
-    """Standard Transformer encoder block."""
-    
     def __init__(self, d_model: int, num_heads: int, ff_mult: int, dropout: float):
         super().__init__()
         self.attn = nn.MultiheadAttention(d_model, num_heads, dropout=dropout, batch_first=True)
@@ -62,61 +56,34 @@ class EncoderBlock(nn.Module):
         return self.norm2(x + self.ffn(x))
 
 
+# MLP baseline
 
+class MLPRegressor(nn.Module):
+    """Simple MLP: flattens the window and predicts the next value."""
 
-class ClassicalBaselineRegressor(nn.Module):
-    """Parameter-matched classical MLP baseline (~53 params)."""
-    
-    def __init__(self, window_size: int):
+    def __init__(self, window_size: int, hidden: int = 64):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(window_size, 2),
-            nn.Tanh(),
-            nn.Linear(2, 1),
+            nn.Linear(window_size, hidden),
+            nn.GELU(),
+            nn.Linear(hidden, hidden),
+            nn.GELU(),
+            nn.Linear(hidden, 1),
         )
-        # Small initialization like quantum model
-        for layer in self.net:
-            if isinstance(layer, nn.Linear):
-                nn.init.normal_(layer.weight, std=0.01)
-                nn.init.zeros_(layer.bias)
-    
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x).squeeze(-1)
 
 
-class ClassicalTransformerRegressor(nn.Module):
-    """Fully classical Transformer baseline."""
-    
-    def __init__(self, window_size: int, cfg: ModelConfig):
-        super().__init__()
-        self.embed = nn.Sequential(
-            nn.Linear(1, cfg.d_model),
-            nn.LayerNorm(cfg.d_model),
-            nn.Dropout(cfg.dropout),
-        )
-        self.pos_enc = PositionalEncoding(cfg.d_model, max(4096, window_size + 8))
-        self.blocks = nn.ModuleList([
-            EncoderBlock(cfg.d_model, cfg.num_heads, cfg.ff_mult, cfg.dropout)
-            for _ in range(cfg.num_classical_layers + 1)
-        ])
-        self.head = nn.Sequential(
-            nn.Linear(cfg.d_model, cfg.d_model // 2),
-            nn.GELU(),
-            nn.Dropout(cfg.dropout),
-            nn.Linear(cfg.d_model // 2, 1),
-        )
-    
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        h = self.pos_enc(self.embed(x.unsqueeze(-1)))
-        for block in self.blocks:
-            h = block(h)
-        return self.head(h[:, -1, :]).squeeze(-1)
+# Single-qubit quantum baseline
 
-
-
-
-class SingleQubitReuploadCell(nn.Module):
-    """1-qubit data re-uploading regressor (~50 params)."""
+class SingleQubitRegressor(nn.Module):
+    """
+    Data re-uploading on a single qubit.
+    For each of the 24 input time steps: encode value as RX, then apply
+    trainable RY + RZ rotations. Read out PauliZ expectation.
+    Classical counterpart to MLPRegressor — no attention, no embeddings.
+    """
 
     def __init__(self, window_size: int):
         super().__init__()
@@ -126,7 +93,7 @@ class SingleQubitReuploadCell(nn.Module):
         nn.init.zeros_(self.readout.bias)
 
         dev, label = make_device(1)
-        logging.info(f"SingleQubitReuploadCell: {label}")
+        logging.info(f"SingleQubitRegressor: {label}")
 
         @qml.qnode(dev, interface="torch", diff_method="best")
         def circuit(inputs: torch.Tensor, theta: torch.Tensor) -> Any:
@@ -143,14 +110,50 @@ class SingleQubitReuploadCell(nn.Module):
         return self.readout(q_out.to(x.dtype).unsqueeze(-1)).squeeze(-1)
 
 
-class QuantumTokenProjection(nn.Module):
-    """Quantum projection layer for Transformer."""
+# Classical Transformer
 
-    def __init__(self, d_model: int, n_qubits: int, q_layers: int, dropout: float, use_conditioning: bool):
+class ClassicalTransformerRegressor(nn.Module):
+    """Standard Transformer encoder for time-series forecasting."""
+
+    def __init__(self, window_size: int, cfg: ModelConfig):
+        super().__init__()
+        self.embed = nn.Sequential(
+            nn.Linear(1, cfg.d_model),
+            nn.LayerNorm(cfg.d_model),
+            nn.Dropout(cfg.dropout),
+        )
+        self.pos_enc = PositionalEncoding(cfg.d_model, max(4096, window_size + 8))
+        self.blocks = nn.ModuleList([
+            EncoderBlock(cfg.d_model, cfg.num_heads, cfg.ff_mult, cfg.dropout)
+            for _ in range(cfg.num_layers)
+        ])
+        self.head = nn.Sequential(
+            nn.Linear(cfg.d_model, cfg.d_model // 2),
+            nn.GELU(),
+            nn.Dropout(cfg.dropout),
+            nn.Linear(cfg.d_model // 2, 1),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        h = self.pos_enc(self.embed(x.unsqueeze(-1)))
+        for block in self.blocks:
+            h = block(h)
+        return self.head(h[:, -1, :]).squeeze(-1)
+
+
+# QASA: Quantum replaces FFN in the last encoder block
+
+class QuantumLayer(nn.Module):
+    """
+    Replaces the FFN in the final encoder block.
+    Projects d_model → n_qubits, runs a variational quantum circuit,
+    projects back to d_model.
+    """
+
+    def __init__(self, d_model: int, n_qubits: int, q_layers: int, dropout: float):
         super().__init__()
         self.n_qubits = n_qubits
         self.q_layers = q_layers
-        self.use_conditioning = use_conditioning
 
         self.in_proj = nn.Linear(d_model, n_qubits)
         self.in_norm = nn.LayerNorm(n_qubits)
@@ -159,7 +162,7 @@ class QuantumTokenProjection(nn.Module):
         self.weights = nn.Parameter(0.05 * torch.randn(q_layers, n_qubits, 2))
 
         dev, label = make_device(n_qubits)
-        logging.info(f"QuantumTokenProjection: {label}")
+        logging.info(f"QuantumLayer: {label}")
 
         @qml.qnode(dev, interface="torch", diff_method="best")
         def circuit(features: torch.Tensor, weights: torch.Tensor) -> Any:
@@ -178,43 +181,40 @@ class QuantumTokenProjection(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         B, L, _ = x.shape
-        hq = torch.tanh(self.in_proj(x))
-        hq = self.in_norm(hq)
-
-        if self.use_conditioning:
-            t = torch.linspace(0, 1, L, device=x.device, dtype=x.dtype)
-            hq = hq + t.view(1, -1, 1)
-
-        flat = hq.view(B * L, self.n_qubits)
+        h = torch.tanh(self.in_proj(x))
+        h = self.in_norm(h)
+        flat = h.view(B * L, self.n_qubits)
         q_out = torch.stack(cast(list, self.circuit(flat, self.weights)), dim=-1)
         q_out = q_out.view(B, L, self.n_qubits).to(x.dtype)
         return x + self.dropout(self.out_proj(q_out))
 
 
 class QuantumEncoderBlock(nn.Module):
-    """Quantum-enhanced encoder block."""
-    
-    def __init__(self, d_model: int, num_heads: int, ff_mult: int, dropout: float,
-                 n_qubits: int, q_layers: int, use_conditioning: bool):
+    """
+    Attention + Quantum (no FFN).
+    The quantum circuit IS the non-linear transformation — it replaces the FFN.
+    """
+
+    def __init__(self, d_model: int, num_heads: int, n_qubits: int, q_layers: int, dropout: float):
         super().__init__()
         self.attn = nn.MultiheadAttention(d_model, num_heads, dropout=dropout, batch_first=True)
         self.norm1 = nn.LayerNorm(d_model)
-        self.quantum = QuantumTokenProjection(d_model, n_qubits, q_layers, dropout, use_conditioning)
+        self.quantum = QuantumLayer(d_model, n_qubits, q_layers, dropout)
         self.norm2 = nn.LayerNorm(d_model)
-        self.ffn = FeedForward(d_model, ff_mult, dropout)
-        self.norm3 = nn.LayerNorm(d_model)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         attn_out, _ = self.attn(x, x, x, need_weights=False)
         x = self.norm1(x + self.dropout(attn_out))
-        x = self.norm2(self.quantum(x))
-        return self.norm3(x + self.ffn(x))
+        return self.norm2(self.quantum(x))
 
 
 class QASATransformerRegressor(nn.Module):
-    """Quantum Adaptive Self-Attention Transformer."""
-    
+    """
+    QASA: classical encoder blocks followed by one quantum encoder block.
+    The final block uses a quantum circuit instead of an FFN.
+    """
+
     def __init__(self, window_size: int, cfg: ModelConfig):
         super().__init__()
         self.embed = nn.Sequential(
@@ -225,11 +225,10 @@ class QASATransformerRegressor(nn.Module):
         self.pos_enc = PositionalEncoding(cfg.d_model, max(4096, window_size + 8))
         self.classical_blocks = nn.ModuleList([
             EncoderBlock(cfg.d_model, cfg.num_heads, cfg.ff_mult, cfg.dropout)
-            for _ in range(cfg.num_classical_layers)
+            for _ in range(cfg.num_layers - 1)
         ])
         self.quantum_block = QuantumEncoderBlock(
-            cfg.d_model, cfg.num_heads, cfg.ff_mult, cfg.dropout,
-            cfg.n_qubits, cfg.q_layers, cfg.use_timestep_conditioning
+            cfg.d_model, cfg.num_heads, cfg.n_qubits, cfg.q_layers, cfg.dropout
         )
         self.head = nn.Sequential(
             nn.Linear(cfg.d_model, cfg.d_model // 2),
@@ -246,18 +245,13 @@ class QASATransformerRegressor(nn.Module):
         return self.head(h[:, -1, :]).squeeze(-1)
 
 
-
-
 def build_model(window_size: int, cfg: ModelConfig) -> nn.Module:
-    """Build a model based on configuration."""
     models = {
-        "classical_baseline": lambda: ClassicalBaselineRegressor(window_size),
-        "single_qubit": lambda: SingleQubitReuploadCell(window_size),
-        "classical_transformer": lambda: ClassicalTransformerRegressor(window_size, cfg),
-        "qasa_transformer": lambda: QASATransformerRegressor(window_size, cfg),
+        "mlp":                    lambda: MLPRegressor(window_size),
+        "single_qubit":           lambda: SingleQubitRegressor(window_size),
+        "classical_transformer":  lambda: ClassicalTransformerRegressor(window_size, cfg),
+        "qasa_transformer":       lambda: QASATransformerRegressor(window_size, cfg),
     }
-    
     if cfg.model_name not in models:
-        raise ValueError(f"Unknown model: {cfg.model_name}")
-    
+        raise ValueError(f"Unknown model: {cfg.model_name}. Choose from: {list(models)}")
     return models[cfg.model_name]()
