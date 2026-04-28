@@ -46,8 +46,8 @@ The quantum circuit: projects `d_model → n_qubits`, runs AngleEmbedding + RY/R
 ```bash
 just show-data              # plot training data
 
-just run-all-fast                # fast: train all 4 models locally (~3-5 min)
-just run-all-full                  # full: train all 4 models locally (~10-20 min)
+just run-all-fast           # fast: train all 4 models locally (~3-5 min)
+just run-all-full           # full: train all 4 models locally (~10-20 min)
 
 just run-ibm-fast           # fast local + eval quantum models on IBM hardware
 just run-ibm-full           # full local + eval quantum models on IBM hardware
