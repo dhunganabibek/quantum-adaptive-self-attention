@@ -150,6 +150,7 @@ def eval_on_ibm(local_output_dir: str, ibm_output_dir: str, max_samples: int = 6
 
 def main():
     p = argparse.ArgumentParser()
+    p.add_argument("--demo", action="store_true", help="Tiny dataset, all models in ~1 min")
     p.add_argument("--fast", action="store_true", help="Small dataset, fast settings (~3-5 min)")
     p.add_argument("--full", action="store_true", help="Full dataset, better settings (~10-20 min)")
     p.add_argument("--backend", choices=["local", "ibm"], default=None)
@@ -182,7 +183,22 @@ def main():
         eval_on_ibm(args.local_dir, args.output_dir, max_samples=args.ibm_samples)
         return
 
-    if args.fast:
+    if args.demo:
+        output_dir = args.output_dir or "./outputs/comparison/demo/local"
+        data_cfg = DataConfig(
+            num_series=40, window_size=8, series_length=32,
+            batch_size=32, dataset_type=args.dataset_type,
+        )
+        model_cfg = ModelConfig(
+            model_name=args.model, n_qubits=2, q_layers=1,
+            d_model=16, num_heads=2, num_layers=2,
+        )
+        train_cfg = TrainConfig(
+            epochs=5, lr=0.05 if args.model == "single_qubit" else args.lr,
+            seed=args.seed, output_dir=output_dir, scheduler_tmax=5,
+        )
+
+    elif args.fast:
         output_dir = args.output_dir or "./outputs/comparison/fast/local"
         data_cfg = DataConfig(
             num_series=200, window_size=12, series_length=60,

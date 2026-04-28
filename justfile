@@ -7,18 +7,36 @@ default:
 show-data:
     uv run python src/demo_data_viz.py
 
+
+run-demo:
+    @echo "\nMLP (demo)"
+    USE_AER=false RUN_LOCAL=true uv run python src/main.py --demo --model mlp \
+        --output-dir outputs/comparison/demo/local/mlp
+    @echo "\nSingle-Qubit (demo)"
+    USE_AER=false RUN_LOCAL=true uv run python src/main.py --demo --model single_qubit \
+        --output-dir outputs/comparison/demo/local/single_qubit
+    @echo "\nClassical Transformer (demo)"
+    USE_AER=false RUN_LOCAL=true uv run python src/main.py --demo --model classical_transformer \
+        --output-dir outputs/comparison/demo/local/classical_transformer
+    @echo "\nQASA Transformer (demo)"
+    USE_AER=false RUN_LOCAL=true uv run python src/main.py --demo --model qasa_transformer \
+        --output-dir outputs/comparison/demo/local/qasa_transformer
+    @echo "\nGenerating plots"
+    uv run python src/plot_results.py --base-dir outputs/comparison/demo
+    @echo "\nDone! Open outputs/plots/"
+
 run-all-fast:
     @echo "\nMLP (local)"
-    uv run python src/main.py --fast --model mlp \
+    USE_AER=false RUN_LOCAL=true uv run python src/main.py --fast --model mlp \
         --output-dir outputs/comparison/fast/local/mlp
     @echo "\nSingle-Qubit quantum (local)"
-    uv run python src/main.py --fast --model single_qubit \
+    USE_AER=false RUN_LOCAL=true uv run python src/main.py --fast --model single_qubit \
         --output-dir outputs/comparison/fast/local/single_qubit
     @echo "\nClassical Transformer (local)"
-    uv run python src/main.py --fast --model classical_transformer \
+    USE_AER=false RUN_LOCAL=true uv run python src/main.py --fast --model classical_transformer \
         --output-dir outputs/comparison/fast/local/classical_transformer
     @echo "\nQASA Transformer (local)"
-    uv run python src/main.py --fast --model qasa_transformer \
+    USE_AER=false RUN_LOCAL=true uv run python src/main.py --fast --model qasa_transformer \
         --output-dir outputs/comparison/fast/local/qasa_transformer
     @echo "\nGenerating plots"
     uv run python src/plot_results.py --base-dir outputs/comparison/fast

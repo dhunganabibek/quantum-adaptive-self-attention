@@ -39,6 +39,9 @@ def setup_logging(output_dir: Path) -> None:
         ],
     )
 
+    for noisy in ("qiskit", "qiskit_ibm_runtime", "qiskit_aer", "stevedore"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+
 
 def save_json(path: Path, payload: dict) -> None:
     """Save dictionary to JSON file."""
