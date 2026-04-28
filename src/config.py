@@ -1,11 +1,10 @@
-"""Configuration for QASA models."""
+"""Configuration for QASA experiments."""
 
 from dataclasses import dataclass
 
 
 @dataclass
 class DataConfig:
-    """Dataset configuration."""
     num_series: int = 2400
     window_size: int = 24
     horizon: int = 1
@@ -20,21 +19,18 @@ class DataConfig:
 
 @dataclass
 class ModelConfig:
-    """Model architecture configuration."""
     model_name: str = "qasa_transformer"
     d_model: int = 64
     num_heads: int = 4
-    num_classical_layers: int = 2
+    num_layers: int = 3        # total encoder blocks (last one is quantum in QASA)
     ff_mult: int = 4
     dropout: float = 0.10
     n_qubits: int = 4
     q_layers: int = 3
-    use_timestep_conditioning: bool = True
 
 
 @dataclass
 class TrainConfig:
-    """Training configuration."""
     seed: int = 42
     epochs: int = 20
     lr: float = 3e-4

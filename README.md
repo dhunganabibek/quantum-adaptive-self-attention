@@ -1,83 +1,69 @@
 # QASA - Quantum Adaptive Self-Attention
 
-Hybrid quantum-classical Transformer for time-series forecasting.
+Hybrid quantum-classical Transformer for time-series forecasting.  
+Compares MLP, Single-Qubit, Classical Transformer, and QASA across local simulator and IBM hardware.
 
 ## Quick Start
 
 ```bash
-# Install
-uv sync --all-extras
+uv sync --all-extras        # install dependencies
 
-# Run demo
-just demo
+just show-data              # visualize training data (no training needed)
 
-# Train models
-just train-quantum
-just train-qasa
+just run-all                # fast run: all 4 models (~3-5 min) → plots
+just run-full               # full run: better results (~10-20 min) → plots
 
-# Compare models
-just compare-all
+just run-ibm                # fast run + eval on IBM hardware → 3-way plots
+just run-full-ibm           # full run + eval on IBM hardware → 3-way plots
 ```
 
 ## Models
+- MLP
+- `single_qubit` 1-qubit data re-uploading circuit
+- `classical_transformer` Standard Transformer encoder
+- `qasa_transformer` Transformer where the final encoder block replaces its FFN with a quantum circuit |
 
-| Model | Params | Description |
-|-------|--------|-------------|
-| `classical_baseline` | ~53 | Parameter-matched MLP baseline |
-| `single_qubit` | ~50 | 1-qubit quantum circuit |
-| `classical_transformer` | ~80K | Fully classical Transformer |
-| `qasa_transformer` | ~75K | Quantum-enhanced Transformer |
+## Architecture: What QASA Changes
+
+Standard Transformer encoder block:
+```
+Attention → Norm → FFN → Norm
+```
+
+QASA final encoder block (quantum replaces FFN):
+```
+Attention → Norm → Quantum Circuit → Norm
+```
+
+The quantum circuit: projects `d_model → n_qubits`, runs AngleEmbedding + RY/RZ rotations + CNOT entanglement, projects back. Classical attention is unchanged.
 
 ## Commands
 
-See all available commands:
 ```bash
-just --list
-```
 
-Common commands:
-```bash
-just demo                    # Quick demo (~30s)
-just train-quantum           # Train quantum model
-just train-qasa              # Train QASA transformer
-just compare-all             # Run all comparisons
-just plot                    # Generate plots
-just pdf                     # Compile presentation
-```
+just show-data              # plot training data
 
-## Structure
+just run-all                # fast: train all 4 models locally (~3-5 min)
+just run-full               # full: train all 4 models locally (~10-20 min)
+
+just run-ibm                # fast local + eval quantum models on IBM hardware
+just run-full-ibm           # full local + eval quantum models on IBM hardware
+
+just plot                   # regenerate plots from fast results
+just plot-full              # regenerate plots from full results
 
 ```
-src/
-├── config.py       # Configuration
-├── data.py         # Dataset generation
-├── models.py       # All 4 models
-├── training.py     # Training loop
-├── utils.py        # Utilities
-└── main.py         # Entry point
+
+## IBM Quantum Setup
+
+Add to `.env` at project root:
+```
+IBM_QUANTUM_TOKEN=your_token_here
+IBM_INSTANCE=crn:v1:bluemix:public:quantum-computing:us-east:a/...::
+IBM_BACKEND=ibm_sherbrooke
 ```
 
-## IBM Quantum
-
-Edit `.env`:
-```bash
-RUN_LOCAL=false
-IBM_QUANTUM_TOKEN=your_token
-IBM_BACKEND=ibm_brisbane
-```
-
-Or use:
-```bash
-just use-ibm
-```
-
-## Results
-
-After training, check `outputs/MODEL_NAME/`:
-- `test_metrics.json` - Performance (R², RMSE, MAE)
-- `history.json` - Training curves
-- `best_model.pt` - Saved weights
-
-## Documentation
-
-- `justfile` - All available commands
+Each model output contains:
+- `test_metrics.json` — R², RMSE, MAE
+- `history.json` — per-epoch train/val loss
+- `best_model.pt` — saved weights

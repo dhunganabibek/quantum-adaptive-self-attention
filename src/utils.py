@@ -47,27 +47,44 @@ def save_json(path: Path, payload: dict) -> None:
 
 # Quantum device management
 def is_local() -> bool:
-    """Check if running on local simulator or IBM Quantum hardware."""
     return os.environ.get("RUN_LOCAL", "true").strip().lower() not in ("false", "0", "no")
 
 
+def is_aer() -> bool:
+    return os.environ.get("USE_AER", "false").strip().lower() in ("true", "1", "yes")
+
+
 def make_device(n_wires: int) -> tuple[qml.Device, str]:
-    """Create a quantum device (local or IBM)."""
-    if is_local():
+    """
+    Three backends:
+      local  (default)  — default.qubit, pure Python, fast
+      aer    (USE_AER)  — qiskit.aer, Qiskit noise-free simulator, same gates as IBM
+      ibm    (RUN_LOCAL=false) — real IBM hardware via qiskit.remote, slow queue
+    """
+    if is_local() and not is_aer():
         dev = qml.device("default.qubit", wires=n_wires)
         return dev, "local (default.qubit)"
 
+    if is_aer():
+        from qiskit_aer import AerSimulator
+        aer_backend = AerSimulator()
+        dev = qml.device("qiskit.aer", wires=n_wires, backend=aer_backend)
+        return dev, "Aer simulator (qiskit.aer)"
+
+    # Real IBM hardware
     token = os.environ.get("IBM_QUANTUM_TOKEN", "")
-    backend = os.environ.get("IBM_BACKEND", "ibm_brisbane")
-    
+    backend_name = os.environ.get("IBM_BACKEND", "ibm_sherbrooke")
     if not token:
-        raise OSError("IBM_QUANTUM_TOKEN must be set in .env file")
+        raise OSError("IBM_QUANTUM_TOKEN must be set in .env")
 
     try:
-        import qiskit_ibm_runtime  # noqa: F401
+        from qiskit_ibm_runtime import QiskitRuntimeService
     except ImportError as exc:
-        raise ImportError("qiskit_ibm_runtime required for IBM backend") from exc
+        raise ImportError("qiskit_ibm_runtime is required for IBM backend") from exc
 
-    dev = qml.device("qiskit.ibmq", wires=n_wires, backend=backend, ibmqx_token=token)
-    logging.info(f"Connected to IBM Quantum: {backend}")
-    return dev, f"IBM Quantum ({backend})"
+    instance = os.environ.get("IBM_INSTANCE", None)
+    service = QiskitRuntimeService(channel="ibm_quantum_platform", token=token, instance=instance)
+    backend = service.backend(backend_name)
+    dev = qml.device("qiskit.remote", wires=n_wires, backend=backend)
+    logging.info(f"Connected to IBM Quantum: {backend_name}")
+    return dev, f"IBM Quantum ({backend_name})"
