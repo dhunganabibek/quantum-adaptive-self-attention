@@ -5,6 +5,7 @@ import logging
 import os
 import random
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pennylane as qml
@@ -54,11 +55,11 @@ def is_aer() -> bool:
     return os.environ.get("USE_AER", "false").strip().lower() in ("true", "1", "yes")
 
 
-def make_device(n_wires: int) -> tuple[qml.Device, str]:
+def make_device(n_wires: int) -> tuple[Any, str]:
     """
     Three backends:
       local  (default)  — default.qubit, pure Python, fast
-      aer    (USE_AER)  — qiskit.aer, Qiskit noise-free simulator, same gates as IBM
+      aer    (USE_AER)  — qiskit.aer, noiseless or noisy (AER_NOISE=true)
       ibm    (RUN_LOCAL=false) — real IBM hardware via qiskit.remote, slow queue
     """
     if is_local() and not is_aer():
@@ -67,9 +68,25 @@ def make_device(n_wires: int) -> tuple[qml.Device, str]:
 
     if is_aer():
         from qiskit_aer import AerSimulator
+        use_noise = os.environ.get("AER_NOISE", "false").strip().lower() in ("true", "1", "yes")
+        if use_noise:
+            from qiskit_aer.noise import NoiseModel
+            from qiskit_ibm_runtime import QiskitRuntimeService
+            token = os.environ.get("IBM_QUANTUM_TOKEN", "")
+            backend_name = os.environ.get("IBM_BACKEND", "ibm_sherbrooke")
+            if not token:
+                raise OSError("IBM_QUANTUM_TOKEN must be set to fetch noise model")
+            instance = os.environ.get("IBM_INSTANCE", None)
+            service = QiskitRuntimeService(channel="ibm_quantum_platform", token=token, instance=instance)
+            real_backend = service.backend(backend_name)
+            noise_model = NoiseModel.from_backend(real_backend)
+            aer_backend = AerSimulator(noise_model=noise_model)
+            dev = qml.device("qiskit.aer", wires=n_wires, backend=aer_backend)
+            logging.info(f"Aer simulator with noise model from {backend_name}")
+            return dev, f"Aer + noise ({backend_name})"
         aer_backend = AerSimulator()
         dev = qml.device("qiskit.aer", wires=n_wires, backend=aer_backend)
-        return dev, "Aer simulator (qiskit.aer)"
+        return dev, "Aer simulator (noiseless)"
 
     # Real IBM hardware
     token = os.environ.get("IBM_QUANTUM_TOKEN", "")
@@ -83,8 +100,9 @@ def make_device(n_wires: int) -> tuple[qml.Device, str]:
         raise ImportError("qiskit_ibm_runtime is required for IBM backend") from exc
 
     instance = os.environ.get("IBM_INSTANCE", None)
+    shots = int(os.environ.get("IBM_SHOTS", "256"))
     service = QiskitRuntimeService(channel="ibm_quantum_platform", token=token, instance=instance)
     backend = service.backend(backend_name)
-    dev = qml.device("qiskit.remote", wires=n_wires, backend=backend)
-    logging.info(f"Connected to IBM Quantum: {backend_name}")
+    dev = qml.device("qiskit.remote", wires=n_wires, backend=backend, shots=shots)
+    logging.info(f"Connected to IBM Quantum: {backend_name} | shots={shots}")
     return dev, f"IBM Quantum ({backend_name})"

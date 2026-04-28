@@ -7,7 +7,7 @@ default:
 show-data:
     uv run python src/demo_data_viz.py
 
-run-all:
+run-all-fast:
     @echo "\nMLP (local)"
     uv run python src/main.py --fast --model mlp \
         --output-dir outputs/comparison/fast/local/mlp
@@ -24,25 +24,43 @@ run-all:
     uv run python src/plot_results.py --base-dir outputs/comparison/fast
     @echo "\nDone! Open outputs/plots/"
 
-# Add ibm steps
-run-ibm:
+# Eval on Aer with IBM noise model
+run-ibm-fast-aer:
     @echo "\nStep 1: train locally (skips if already done)"
-    just run-all
-    @echo "\nStep 2: eval Single-Qubit on IBM hardware"
-    uv run python src/main.py --backend ibm --eval-only \
+    @if [ ! -f outputs/comparison/fast/local/qasa_transformer/best_model.pt ]; then just run-all; else echo "Local weights found, skipping training."; fi
+    @echo "\nStep 2: eval Single-Qubit on Aer + noise"
+    USE_AER=true AER_NOISE=true uv run python src/main.py --eval-only \
         --local-dir outputs/comparison/fast/local/single_qubit \
         --output-dir outputs/comparison/fast/ibm/single_qubit
-    @echo "\nStep 3: eval QASA on IBM hardware"
-    uv run python src/main.py --backend ibm --eval-only \
+    @echo "\nStep 3: eval QASA on Aer + noise"
+    USE_AER=true AER_NOISE=true uv run python src/main.py --eval-only \
         --local-dir outputs/comparison/fast/local/qasa_transformer \
         --output-dir outputs/comparison/fast/ibm/qasa_transformer
+    @echo "\nStep 4: regenerate plots"
+    uv run python src/plot_results.py --base-dir outputs/comparison/fast
+    @echo "\nDone! Open outputs/plots/"
+
+# Eval on real IBM hardware
+run-ibm-fast:
+    @echo "\nStep 1: train locally (skips if already done)"
+    @if [ ! -f outputs/comparison/fast/local/qasa_transformer/best_model.pt ]; then just run-all; else echo "Local weights found, skipping training."; fi
+    @echo "\nStep 2: eval Single-Qubit on IBM hardware"
+    USE_AER=false uv run python src/main.py --backend ibm --eval-only \
+        --local-dir outputs/comparison/fast/local/single_qubit \
+        --output-dir outputs/comparison/fast/ibm/single_qubit \
+        --ibm-samples 16
+    @echo "\nStep 3: eval QASA on IBM hardware"
+    USE_AER=false uv run python src/main.py --backend ibm --eval-only \
+        --local-dir outputs/comparison/fast/local/qasa_transformer \
+        --output-dir outputs/comparison/fast/ibm/qasa_transformer \
+        --ibm-samples 16
     @echo "\nStep 4: regenerate plots with IBM bars"
     uv run python src/plot_results.py --base-dir outputs/comparison/fast
     @echo "\nDone! Open outputs/plots/"
 
 
 # Full dataset (2400 series, window 24), more epochs, 4 qubits.
-run-full:
+run-all-full:
     @echo "\nMLP (full)"
     uv run python src/main.py --full --model mlp \
         --output-dir outputs/comparison/full/local/mlp
@@ -61,17 +79,19 @@ run-full:
 
 
 # Add IBM too.
-run-full-ibm:
+run-ibm-full:
     @echo "\nStep 1: full training locally"
     just run-full
     @echo "\nStep 2: eval Single-Qubit on IBM hardware"
     uv run python src/main.py --backend ibm --eval-only \
         --local-dir outputs/comparison/full/local/single_qubit \
-        --output-dir outputs/comparison/full/ibm/single_qubit
+        --output-dir outputs/comparison/full/ibm/single_qubit \
+        --ibm-samples 32
     @echo "\nStep 3: eval QASA on IBM hardware"
     uv run python src/main.py --backend ibm --eval-only \
         --local-dir outputs/comparison/full/local/qasa_transformer \
-        --output-dir outputs/comparison/full/ibm/qasa_transformer
+        --output-dir outputs/comparison/full/ibm/qasa_transformer \
+        --ibm-samples 32
     @echo "\nStep 4: regenerate plots with IBM bars"
     uv run python src/plot_results.py --base-dir outputs/comparison/full
     @echo "\nDone! Open outputs/plots/"

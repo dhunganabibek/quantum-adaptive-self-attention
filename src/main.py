@@ -8,6 +8,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 import torch
+from torch.utils.data import DataLoader, Subset
 
 from config import DataConfig, ModelConfig, TrainConfig
 from data import build_dataloaders
@@ -88,13 +89,10 @@ def train(data_cfg: DataConfig, model_cfg: ModelConfig, train_cfg: TrainConfig) 
     return test_m
 
 
-def eval_on_ibm(local_output_dir: str, ibm_output_dir: str) -> dict:
+def eval_on_ibm(local_output_dir: str, ibm_output_dir: str, max_samples: int = 64) -> dict:
     """
     Load weights trained locally, rebuild the model using the IBM backend,
     and evaluate only the test set on IBM hardware.
-
-    This avoids submitting thousands of training jobs to the IBM queue —
-    only one forward pass over the test set is sent to the hardware.
     """
     local_dir = Path(local_output_dir)
     ibm_dir   = Path(ibm_output_dir)
@@ -131,8 +129,14 @@ def eval_on_ibm(local_output_dir: str, ibm_output_dir: str) -> dict:
     model.load_state_dict(torch.load(best_path, map_location=device)["model_state"])
     logging.info("Loaded locally-trained weights.")
 
-    # Only need the test loader
+    # Only need the test loader, capped to max_samples to limit IBM job count
     _, _, test_loader = build_dataloaders(data_cfg, train_cfg)
+    test_dataset = test_loader.dataset
+    n_test = len(test_loader.dataset)  # type: ignore[arg-type]
+    if max_samples < n_test:
+        test_dataset = Subset(test_dataset, list(range(max_samples)))
+        logging.info(f"Capping IBM eval to {max_samples} samples (full test set: {n_test})")
+    test_loader = DataLoader(test_dataset, batch_size=max_samples, shuffle=False)
 
     logging.info("Running test set forward pass on IBM hardware (this may take a while)...")
     test_loss, test_m = run_epoch(model, test_loader, None, device)
@@ -164,6 +168,8 @@ def main():
                    help="Skip training — load weights from --local-dir and eval on IBM hardware")
     p.add_argument("--local-dir", default=None,
                    help="Path to local training output (used with --eval-only)")
+    p.add_argument("--ibm-samples", type=int, default=64,
+                   help="Max samples to send to IBM hardware (one batch = one job)")
 
     args = p.parse_args()
     _apply_backend_flag(args.backend)
@@ -173,7 +179,7 @@ def main():
             p.error("--eval-only requires --local-dir pointing to a completed local training run")
         if not args.output_dir:
             p.error("--eval-only requires --output-dir for IBM results")
-        eval_on_ibm(args.local_dir, args.output_dir)
+        eval_on_ibm(args.local_dir, args.output_dir, max_samples=args.ibm_samples)
         return
 
     if args.fast:

@@ -1,5 +1,6 @@
 """Training utilities and metrics."""
 
+import logging
 import math
 
 import numpy as np
@@ -71,8 +72,6 @@ def run_epoch(
         targets.append(y.detach().cpu())
 
         if is_train and log_every and step % log_every == 0:
-            import logging
-
             logging.info(f"  step={step}  loss={float(np.mean(losses)):.4f}")
 
     return float(np.mean(losses)), compute_metrics(torch.cat(preds), torch.cat(targets))
