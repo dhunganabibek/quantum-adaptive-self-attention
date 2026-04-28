@@ -42,8 +42,7 @@ np.random.seed(42)
 random.seed(42)
 
 
-# Signal generators (mirrors data.py) 
-
+# Signal generators
 def _sine(length: int) -> np.ndarray:
     t = np.linspace(0, 1, length)
     return np.sin(2 * math.pi * np.random.uniform(1, 6) * t + np.random.uniform(0, 2 * math.pi))
@@ -70,7 +69,7 @@ GENERATORS = {"Sine": _sine, "Damped": _damped, "Chirp": _chirp, "Mixed": _mixed
 COLORS     = {"Sine": BLUE,  "Damped": ORANGE,  "Chirp": GREEN,  "Mixed": PURPLE}
 
 
-# Plot A: All 4 signal types, 3 samples each 
+# All 4 signal types, 3 samples each 
 
 def plot_data_overview() -> None:
     fig, axes = plt.subplots(4, 3, figsize=(16, 10))
@@ -100,7 +99,6 @@ def plot_data_overview() -> None:
 
 
 # Plot B: What the model actually sees and predicts
-
 def plot_prediction_task() -> None:
     series = _zscore(_mixed(160))
     window = 24
@@ -132,15 +130,11 @@ def plot_prediction_task() -> None:
 
 def main() -> None:
     print(f"\nGenerating data visualizations → {OUT}/\n")
-    print("A. Signal types overview...")
+    print("Signal types overview...")
     plot_data_overview()
-    print("B. Prediction task illustration...")
+    print("Prediction task illustration...")
     plot_prediction_task()
     print(f"\nDone. Open {OUT}/ to view the plots.")
-    print("\nNext steps:")
-    print("  just run-all       # train MLP + Classical Transformer + QASA, then plot results")
-    print("  just run-ibm       # same but also runs QASA on IBM hardware")
-
 
 if __name__ == "__main__":
     main()

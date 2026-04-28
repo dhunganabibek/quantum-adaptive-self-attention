@@ -2,6 +2,7 @@
 
 import logging
 import math
+import os
 from typing import Any, cast
 
 import pennylane as qml
@@ -9,7 +10,7 @@ import torch
 import torch.nn as nn
 
 from config import ModelConfig
-from utils import make_device
+from utils import is_local, make_device
 
 
 class PositionalEncoding(nn.Module):
@@ -95,7 +96,9 @@ class SingleQubitRegressor(nn.Module):
         dev, label = make_device(1)
         logging.info(f"SingleQubitRegressor: {label}")
 
-        @qml.qnode(dev, interface="torch", diff_method="best")
+        shots = int(os.environ.get("IBM_SHOTS", "256")) if not is_local() else None
+
+        @qml.qnode(dev, interface="torch", diff_method="best", shots=shots)
         def circuit(inputs: torch.Tensor, theta: torch.Tensor) -> Any:
             for t in range(window_size):
                 qml.RX(cast(Any, inputs[..., t]), wires=0)
@@ -164,7 +167,9 @@ class QuantumLayer(nn.Module):
         dev, label = make_device(n_qubits)
         logging.info(f"QuantumLayer: {label}")
 
-        @qml.qnode(dev, interface="torch", diff_method="best")
+        shots = int(os.environ.get("IBM_SHOTS", "256")) if not is_local() else None
+
+        @qml.qnode(dev, interface="torch", diff_method="best", shots=shots)
         def circuit(features: torch.Tensor, weights: torch.Tensor) -> Any:
             for layer in range(q_layers):
                 qml.AngleEmbedding(features, wires=range(n_qubits), rotation="X")
@@ -206,7 +211,12 @@ class QuantumEncoderBlock(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         attn_out, _ = self.attn(x, x, x, need_weights=False)
         x = self.norm1(x + self.dropout(attn_out))
-        return self.norm2(self.quantum(x))
+        # Only run the quantum circuit on the last token (the one the head reads).
+        # This reduces IBM submissions from B*L to B.
+        last = x[:, -1:, :]                        # [B, 1, d_model]
+        q_last = self.quantum(last)                 # [B, 1, d_model]
+        out = torch.cat([x[:, :-1, :], q_last], dim=1)  # [B, L, d_model]
+        return self.norm2(out)
 
 
 class QASATransformerRegressor(nn.Module):
